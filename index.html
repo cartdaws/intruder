@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#000000" />
+  <title>INTRUDER</title>
+  <script type="module" crossorigin src="./assets/index-CTVH299w.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DtTDo8cQ.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+    <div id="hitmarker"><b></b><b></b><b></b><b></b></div>
+    <div id="vignette"></div>
+    <div id="lowhp"></div>
+    <div id="dmgdir"><i></i></div>
+    <div id="health">
+      <span class="label">VITALITY</span>
+      <div class="bar"><div id="healthFill"></div></div>
+      <span id="healthNum">100</span>
+    </div>
+    <div id="weapon">
+      <span id="weaponName">SHARDCASTER</span>
+      <div class="dash"><span class="label">DASH</span><div class="bar"><div id="dashFill"></div></div></div>
+    </div>
+    <div id="objective"></div>
+    <div id="hint"></div>
+    <div id="prompt"></div>
+  </div>
+
+  <div id="rotate"><span>ROTATE YOUR DEVICE<br>TO LANDSCAPE</span></div>
+  <canvas id="memory" class="hidden"></canvas>
+  <div id="subtitle" class="hidden"><b></b><span></span></div>
+  <div id="banner"></div>
+  <div id="fade"></div>
+  <div id="skip" class="hidden">SKIP INTRO &nbsp;<b>SPACE</b></div>
+
+  <div id="menu-start" class="menu">
+    <h1>INTRUDER</h1>
+    <button id="btn-play" class="primary">PLAY</button>
+    <button id="btn-gfx" class="minor">GRAPHICS: REALISTIC</button>
+  </div>
+
+  <div id="menu-pause" class="menu hidden">
+    <h2>PAUSED</h2>
+    <button id="btn-resume" class="primary">RESUME</button>
+    <button id="btn-restart">RESTART ENCOUNTER</button>
+    <button id="btn-gfx2">GRAPHICS: REALISTIC</button>
+    <div class="settings">
+      <label>VOLUME <input id="set-volume" type="range" min="0" max="1" step="0.01" value="0.7" /></label>
+      <label>SENSITIVITY <input id="set-sens" type="range" min="0.2" max="3" step="0.05" value="1" /></label>
+    </div>
+  </div>
+
+  <div id="menu-dead" class="menu hidden">
+    <h2 class="danger">SPECIMEN LOST</h2>
+    <button id="btn-retry" class="primary">RESTART</button>
+  </div>
+
+  <div id="menu-complete" class="menu hidden">
+    <h2>First encounter complete</h2>
+    <button id="btn-replay" class="primary">REPLAY ENCOUNTER</button>
+    <button id="btn-intro">REPLAY FROM THE START</button>
+  </div>
+
+</body>
+</html>
