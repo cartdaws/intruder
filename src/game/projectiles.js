@@ -1,193 +1,94 @@
+// Every shot in the game: the player's gel spines and the five machine projectiles. Each kind looks different on
+// purpose, so the player can read a fight at a glance: red bolts, green darts, a slow purple plasma ball that splashes,
+// yellow needles, and an orange seeker that bends toward you (it can only turn about 35 degrees in total).
 import * as THREE from 'three';
+import { G, shake } from '../core/engine.js';
+import { P } from './player.js';
+import { gelMaterial } from './gel.js';
 
-// The arm's ammunition is grown, not made: a barbed bone spine wrapped in glowing gel.
-const spineGeo = new THREE.ConeGeometry(0.5, 1, 7).rotateX(-Math.PI / 2); // points along -z after lookAt
-const barbGeo = new THREE.ConeGeometry(0.5, 1, 4).rotateX(-Math.PI / 2);
-const sheathGeo = new THREE.SphereGeometry(0.5, 12, 9);
-const spineMat = new THREE.MeshBasicMaterial({ color: 0xe9f0d8 });
-const sheathMat = new THREE.MeshBasicMaterial({ color: 0x4dff9a, transparent: true, opacity: 0.38, depthWrite: false, blending: THREE.AdditiveBlending });
-const GOO = [0.4, 1, 0.55];
-
-// Enemy projectiles: each kind of machine fires something you can tell apart at a glance.
-const add = (c) => new THREE.MeshBasicMaterial({ color: c, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
-const ENEMY_SHOTS = {
-  orb: { core: 0xffe0b0, halo: 0xff3a14, size: 0.15, halo2: 2.2, trail: [1, 0.35, 0.15] },               // sentry drone
-  bolt: { core: 0xfff0c0, halo: 0xffa020, size: 0.07, stretch: 6, halo2: 2.6, trail: [1, 0.65, 0.2] },    // trooper: amber tracer
-  needle: { core: 0xeaffff, halo: 0x30d8ff, size: 0.035, stretch: 10, halo2: 3, trail: [0.4, 0.9, 1] },   // scout: fast thin needles
-  plasma: { core: 0xffd0a0, halo: 0xff4a10, size: 0.26, halo2: 2.0, trail: [1, 0.4, 0.1], splash: 1.9 }, // heavy: slow splashing orb
-  seeker: { core: 0xf0d0ff, halo: 0xa040ff, size: 0.17, halo2: 2.4, trail: [0.7, 0.35, 1], homing: 1.9 }, // armoured drone: curving seeker
+export const SHOTS = {
+  spine: { speed: 64, dmg: 14, life: 1.5, r: 0.06, color: 0x35ffe0 },
+  bolt: { speed: 24, dmg: 8, life: 3, r: 0.1, color: 0xff3828 },
+  dart: { speed: 32, dmg: 4, life: 2.5, r: 0.07, color: 0x5cff4a },
+  plasma: { speed: 10.5, dmg: 20, life: 6, r: 0.3, color: 0xb04cff, splash: 3.4, splashDmg: 13 },
+  needle: { speed: 28, dmg: 5, life: 2.5, r: 0.06, color: 0xffe14a },
+  seeker: { speed: 12.5, dmg: 15, life: 6, r: 0.16, color: 0xff8a1e, turn: 35 * Math.PI / 180, turnRate: 1.1, splash: 1.8, splashDmg: 6 },
 };
-const SHOT_MATS = {};
-for (const [k, d] of Object.entries(ENEMY_SHOTS)) SHOT_MATS[k] = { core: new THREE.MeshBasicMaterial({ color: d.core }), halo: add(d.halo) };
-for (const m of Object.values(SHOT_MATS)) { m.halo.opacity = 0.55; m.core.userData.noSnap = m.halo.userData.noSnap = true; }
-const SOFT = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(255,255,255,0.5)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
-const HALO_SPRITES = {};
-for (const [k, d] of Object.entries(ENEMY_SHOTS)) { HALO_SPRITES[k] = new THREE.SpriteMaterial({ map: SOFT, color: d.halo, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }); HALO_SPRITES[k].userData.noSnap = true; }
-const _aim = new THREE.Vector3();
-const shotGeo = new THREE.SphereGeometry(0.15, 12, 10);
-const shotMat = new THREE.MeshBasicMaterial({ color: 0xffe0b0 });
-const shotHaloMat = new THREE.MeshBasicMaterial({ color: 0xff3a14, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending });
-
-// Returns distance along the unit ray to the first intersection with a sphere, or -1.
-export function raySphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, r, maxT) {
-  const mx = cx - ox, my = cy - oy, mz = cz - oz;
-  const t = mx * dx + my * dy + mz * dz;
-  const d2 = mx * mx + my * my + mz * mz - t * t;
-  if (d2 > r * r) return -1;
-  const h = Math.sqrt(r * r - d2);
-  let t0 = t - h;
-  if (t0 < 0) t0 = t + h < 0 ? -1 : 0;
-  return t0 >= 0 && t0 <= maxT ? t0 : -1;
+const basic = (c) => new THREE.MeshBasicMaterial({ color: c });
+let geos = null;
+function make(kind) {
+  geos = geos || { box: new THREE.BoxGeometry(1, 1, 1), ball: new THREE.IcosahedronGeometry(1, 1), cone: new THREE.ConeGeometry(1, 1, 6) };
+  const g = new THREE.Group(), add = (geo, mat, sx, sy, sz, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.scale.set(sx, sy, sz); m.position.set(x, y, z); g.add(m); return m; };
+  const c = SHOTS[kind].color;
+  if (kind === 'spine') { // a barbed gel spine: long cone with three swept-back barbs
+    const mat = gelMaterial({ color: 0x18d8c0, glow: 0.6, opacity: 0.92 });
+    const s = add(geos.cone, mat, 0.045, 0.75, 0.045); s.rotation.x = Math.PI / 2;
+    for (let i = 0; i < 3; i++) { const b = add(geos.cone, mat, 0.022, 0.2, 0.022, Math.cos(i * 2.094) * 0.05, Math.sin(i * 2.094) * 0.05, -0.12); b.rotation.set(Math.PI / 2 - Math.sin(i * 2.094) * 0.6, Math.cos(i * 2.094) * 0.6, 0); }
+  } else if (kind === 'bolt') { add(geos.box, basic(c), 0.07, 0.07, 1.1); add(geos.box, basic(0xffd0c0), 0.03, 0.03, 1.15); }
+  else if (kind === 'dart') { add(geos.box, basic(c), 0.04, 0.04, 0.5, -0.09); add(geos.box, basic(c), 0.04, 0.04, 0.5, 0.09); }
+  else if (kind === 'plasma') { add(geos.ball, basic(c), 0.3, 0.3, 0.3); add(geos.ball, new THREE.MeshBasicMaterial({ color: 0xff9a3a, transparent: true, opacity: 0.45 }), 0.44, 0.44, 0.44); }
+  else if (kind === 'needle') { add(geos.box, basic(c), 0.03, 0.03, 0.8); }
+  else if (kind === 'seeker') { const m = add(geos.cone, basic(0xd8dde2), 0.11, 0.5, 0.11); m.rotation.x = Math.PI / 2; add(geos.ball, basic(c), 0.13, 0.13, 0.13, 0, 0, -0.3); add(geos.box, basic(0x50565c), 0.34, 0.03, 0.14, 0, 0, -0.2); add(geos.box, basic(0x50565c), 0.03, 0.34, 0.14, 0, 0, -0.2); }
+  return g;
+}
+// Segment a->b against a vertical cylinder. Returns the fraction along the segment of the first touch, or -1.
+export function segCylinder(a, b, cx, cz, y0, y1, r) {
+  const dx = b.x - a.x, dz = b.z - a.z, fx = a.x - cx, fz = a.z - cz, A = dx * dx + dz * dz, C = fx * fx + fz * fz - r * r;
+  let t = 0;
+  if (C > 0) { if (A < 1e-9) return -1; const B = fx * dx + fz * dz, disc = B * B - A * C; if (disc < 0) return -1; t = (-B - Math.sqrt(disc)) / A; if (t < 0 || t > 1) return -1; }
+  const y = a.y + (b.y - a.y) * t;
+  return y >= y0 - r && y <= y1 + r ? t : -1;
 }
 
-// Swept projectiles: every step tests the whole segment travelled, so speed never causes tunnelling.
 export class Projectiles {
-  constructor(game) {
-    this.game = game;
-    this.list = [];
-    this.group = new THREE.Group();
-    game.scene.add(this.group);
+  constructor(game, scene) { this.game = game; this.scene = scene; this.live = []; this.pool = {}; this._a = new THREE.Vector3(); this._b = new THREE.Vector3(); this._d = new THREE.Vector3(); }
+  // owner: 'player' or the enemy that fired (machine shots never hurt machines)
+  spawn(kind, pos, dir, owner) {
+    const pool = this.pool[kind] || (this.pool[kind] = []);
+    const mesh = pool.pop() || make(kind); if (!mesh.parent) this.scene.add(mesh);
+    mesh.visible = true; mesh.position.copy(pos);
+    const s = { kind, def: SHOTS[kind], mesh, dir: dir.clone().normalize(), owner, life: SHOTS[kind].life, turned: 0, t: 0 };
+    mesh.lookAt(this._a.copy(pos).add(s.dir)); this.live.push(s); return s;
   }
-
-  spawnPlayer(origin, dir, speed = 95, damage = 10) {
-    const mesh = new THREE.Group();
-    const spine = new THREE.Mesh(spineGeo, spineMat);
-    spine.scale.set(0.07, 0.07, 0.55);
-    spine.position.z = 0.05;
-    mesh.add(spine);
-    for (const [z, a] of [[0.12, 0.6], [0.2, 2.6], [0.27, 4.4]]) { // little barbs swept back along the shaft
-      const b = new THREE.Mesh(barbGeo, spineMat);
-      b.scale.set(0.03, 0.03, 0.09);
-      b.position.set(Math.cos(a) * 0.035, Math.sin(a) * 0.035, z);
-      b.rotation.set(Math.sin(a) * 0.5, -Math.cos(a) * 0.5, 0);
-      mesh.add(b);
-    }
-    const sheath = new THREE.Mesh(sheathGeo, sheathMat);
-    sheath.scale.set(0.2, 0.2, 0.75);
-    sheath.position.z = 0.08;
-    mesh.add(sheath);
-    mesh.userData.sheath = sheath;
-    mesh.position.copy(origin);
-    mesh.lookAt(origin.clone().add(dir));
-    this.group.add(mesh);
-    this.list.push({ mesh, pos: origin.clone(), dir: dir.clone(), speed, damage, life: 1.4, enemy: false, age: 0 });
-  }
-
-  spawnEnemy(origin, dir, speed, damage, kind = 'orb') {
-    const d = ENEMY_SHOTS[kind] || ENEMY_SHOTS.orb, mats = SHOT_MATS[kind] || SHOT_MATS.orb;
-    const mesh = new THREE.Group();
-    const core = new THREE.Mesh(shotGeo, mats.core);
-    const halo = new THREE.Sprite(HALO_SPRITES[kind] || HALO_SPRITES.orb);
-    const s = d.size / 0.15, st = d.stretch || 1;
-    core.scale.set(s * 0.55, s * 0.55, s * 0.55 * st);
-    { const w = 0.3 * s * d.halo2 * 1.5; halo.scale.set(w, w, 1); }
-    mesh.add(core, halo);
-    mesh.position.copy(origin);
-    mesh.lookAt(origin.clone().add(dir));
-    this.group.add(mesh);
-    this.list.push({ mesh, pos: origin.clone(), dir: dir.clone(), speed, damage, life: 5, enemy: true, kind, def: d, age: 0, halo });
-  }
-
-  // a heavy plasma orb bursts: everything close to the blast takes a share of the damage
-  splash(p, at) {
-    const g = this.game, r = p.def.splash;
-    g.effects.fireball(at, 0.9, 0.3, 0xff6a20);
-    g.effects.hitSparks(at, [1, 0.5, 0.15], 18);
-    g.sfxAt('explosion', at, 0.5);
-    const pp = g.player.pos;
-    const d = Math.hypot(pp.x - at.x, pp.y + 0.9 - at.y, pp.z - at.z);
-    if (d < r && !g.player.dead) g.damagePlayer(Math.round(p.damage * 0.6 * (1 - d / r)), at);
-  }
-
-  clear() {
-    for (const p of this.list) this.group.remove(p.mesh);
-    this.list.length = 0;
-  }
-
+  clear() { for (const s of this.live) { s.mesh.visible = false; this.pool[s.kind].push(s.mesh); } this.live.length = 0; }
   update(dt) {
-    const g = this.game;
-    const { world } = g;
-    for (let i = this.list.length - 1; i >= 0; i--) {
-      const p = this.list[i];
-      p.life -= dt;
-      if (p.enemy) {
-        p.age += dt;
-        // seekers bend toward the player for a moment after launch
-        // (a gentle curve, never a U-turn: it stops steering once the player is behind it or it has bent ~35 degrees)
-        if (p.def.homing && p.age < 1.6 && !g.player.dead && !p.lostLock) {
-          _aim.set(g.player.pos.x - p.pos.x, g.player.pos.y + 1.0 - p.pos.y, g.player.pos.z - p.pos.z).normalize();
-          if (!p.d0) p.d0 = p.dir.clone();
-          if (_aim.dot(p.dir) < 0.35 || p.d0.angleTo(p.dir) > 0.6) p.lostLock = true;
-          else {
-            p.dir.lerp(_aim, Math.min(1, p.def.homing * dt)).normalize();
-            p.mesh.lookAt(p.pos.clone().add(p.dir));
-          }
-        }
-        const tr = p.def.trail;
-        if (Math.random() < 0.6) g.effects.glowP.emit(p.pos.x, p.pos.y, p.pos.z, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, 0.2, p.def.size * 0.5, tr[0], tr[1], tr[2], 0, 2);
-        const pulse = 1 + 0.15 * Math.sin(p.age * 40);
-        p.halo.scale.multiplyScalar(pulse / (p.lastPulse || 1)); p.lastPulse = pulse;
+    const game = this.game, world = game.world, pl = game.player, fx = game.fx, a = this._a, b = this._b;
+    for (let i = this.live.length - 1; i >= 0; i--) {
+      const s = this.live[i], d = s.def; s.life -= dt; s.t += dt;
+      if (d.turn && s.turned < d.turn && !pl.dead) { // seeker: bend toward the player, within its total turn budget
+        const want = pl.center(this._d).sub(s.mesh.position).normalize(), ang = Math.acos(Math.max(-1, Math.min(1, want.dot(s.dir))));
+        const stepA = Math.min(ang, d.turnRate * dt, d.turn - s.turned);
+        if (ang > 1e-4 && stepA > 0) { s.dir.lerp(want, stepA / ang).normalize(); s.turned += stepA; }
       }
-      const step = p.speed * dt;
-      const { x: ox, y: oy, z: oz } = p.pos;
-      const { x: dx, y: dy, z: dz } = p.dir;
-      let bestT = step, hit = null;
-
-      const wh = world.raycast(ox, oy, oz, dx, dy, dz, step);
-      if (wh && wh.t <= bestT) { bestT = wh.t; hit = { type: 'world', n: wh }; }
-
-      if (!p.enemy) {
-        for (const e of g.enemies) {
-          if (!e.alive) continue;
-          for (const s of e.hitSpheres) {
-            const t = raySphere(ox, oy, oz, dx, dy, dz, s.c.x, s.c.y, s.c.z, s.r, bestT);
-            if (t >= 0 && t <= bestT) { bestT = t; hit = { type: 'enemy', target: e }; }
-          }
-        }
-        const it = g.opening.target; // the maintenance lock in the opening
-        if (it && it.alive) {
-          const t = raySphere(ox, oy, oz, dx, dy, dz, it.c.x, it.c.y, it.c.z, it.r, bestT);
-          if (t >= 0 && t <= bestT) { bestT = t; hit = { type: 'intro' }; }
-        }
-        for (const b of g.barrels) {
-          if (b.state === 'destroyed') continue;
-          for (const s of b.hitSpheres) {
-            const t = raySphere(ox, oy, oz, dx, dy, dz, s.c.x, s.c.y, s.c.z, s.r, bestT);
-            if (t >= 0 && t <= bestT) { bestT = t; hit = { type: 'barrel', target: b }; }
-          }
-        }
-      } else if (!g.player.dead) {
-        const pp = g.player.pos;
-        for (const h of [0.45, 0.95, 1.45]) {
-          const t = raySphere(ox, oy, oz, dx, dy, dz, pp.x, pp.y + h, pp.z, 0.42, bestT);
-          if (t >= 0 && t <= bestT) { bestT = t; hit = { type: 'player' }; }
-        }
+      a.copy(s.mesh.position); b.copy(a).addScaledVector(s.dir, d.speed * dt);
+      let hitT = 2, hit = null;
+      const wh = world.raycast(a, s.dir, d.speed * dt); if (wh) { hitT = wh.t / (d.speed * dt); hit = { wall: wh }; }
+      if (s.owner === 'player') { const eh = game.enemies.hitSegment(a, b, d.r); if (eh && eh.t < hitT) { hitT = eh.t; hit = { enemy: eh.enemy }; } }
+      else if (!pl.dead) { const t = segCylinder(a, b, pl.pos.x, pl.pos.z, pl.pos.y, pl.pos.y + P.H, P.R + d.r); if (t >= 0 && t < hitT) { hitT = t; hit = { player: true }; } }
+      if (hit || s.life <= 0) {
+        const p = hit ? a.lerp(b, Math.min(1, hitT)) : b; this.impact(s, p, hit);
+        s.mesh.visible = false; this.pool[s.kind].push(s.mesh); this.live.splice(i, 1); continue;
       }
-
-      const hp = new THREE.Vector3(ox + dx * bestT, oy + dy * bestT, oz + dz * bestT);
-      if (hit) {
-        this.list.splice(i, 1);
-        this.group.remove(p.mesh);
-        if (hit.type === 'world') {
-          const n = new THREE.Vector3(hit.n.nx, hit.n.ny, hit.n.nz);
-          if (p.enemy) { g.effects.hitSparks(hp, p.def.trail, 10); if (p.def.splash) this.splash(p, hp); }
-          else { g.effects.goo(hp, n); g.sfxAt('impact', hp, 0.8); }
-        } else if (hit.type === 'enemy') g.onPlayerHit(hit.target, p.damage, hp);
-        else if (hit.type === 'barrel') g.onPlayerHitBarrel(hit.target, p.damage, hp);
-        else if (hit.type === 'intro') g.opening.hitTarget(hp);
-        else if (hit.type === 'player') { g.damagePlayer(p.damage, hp); if (p.def.splash) g.effects.fireball(hp, 0.7, 0.25, 0xff6a20); }
-        continue;
-      }
-      p.pos.set(ox + dx * step, oy + dy * step, oz + dz * step);
-      p.mesh.position.copy(p.pos);
-      if (!p.enemy) {
-        // the gel sheath throbs and sheds droplets as it flies
-        p.age += dt;
-        const s = p.mesh.userData.sheath;
-        if (s) { const k = 1 + 0.18 * Math.sin(p.age * 60); s.scale.set(0.2 * k, 0.2 * k, 0.75 / k); }
-        if (Math.random() < 0.7) g.effects.glowP.emit(p.pos.x, p.pos.y, p.pos.z, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, 0.22, 0.035, GOO[0], GOO[1], GOO[2], 6, 1);
-      }
-      if (p.life <= 0 || p.pos.y < -1 || p.pos.y > 20) { this.list.splice(i, 1); this.group.remove(p.mesh); }
+      s.mesh.position.copy(b); s.mesh.lookAt(a.copy(b).add(s.dir));
+      if (s.kind === 'plasma') { s.mesh.rotation.z = s.t * 5; if (Math.random() < dt * 25) fx.burst(b.x, b.y, b.z, 1, { color: 0xb04cff, speed: 0.6, life: 0.4, size: 0.2, grav: 0 }); }
+      if (s.kind === 'seeker' && Math.random() < dt * 40) fx.burst(b.x, b.y, b.z, 1, { color: 0x9a9a9a, speed: 0.4, life: 0.5, size: 0.16, grav: -1 });
     }
+  }
+  impact(s, p, hit) {
+    const game = this.game, fx = game.fx, d = s.def, pl = game.player;
+    if (s.owner === 'player') {
+      if (hit && hit.enemy) { game.enemies.damage(hit.enemy, d.dmg * (pl.cheat.oneHit ? 100 : 1), s.dir, p); fx.burst(p.x, p.y, p.z, 7, { color: 0x35ffe0, speed: 3.5, life: 0.35, size: 0.11 }); G.audio.play('hit', 0.7, p); G.bus.emit('hitmark'); }
+      else if (hit && hit.wall) { const w = hit.wall; fx.decal(p.x, p.y, p.z, w.nx, w.ny, w.nz, 0.22 + Math.random() * 0.16); fx.burst(p.x, p.y, p.z, 5, { color: 0x22e6c8, speed: 2.5, life: 0.4, size: 0.1, dir: { x: w.nx * 0.4, y: w.ny * 0.4, z: w.nz * 0.4 } }); G.audio.play('splat', 0.5, p); }
+      return;
+    }
+    if (hit && hit.player) pl.hurt(d.dmg, s.mesh.position);
+    if (d.splash) { // area damage falls off with distance; a direct hit already did its own damage
+      const dist = pl.center(this._d).distanceTo(p);
+      if (dist < d.splash && !(hit && hit.player)) pl.hurt(Math.round(d.splashDmg * (1 - dist / d.splash * 0.6)), p);
+      fx.burst(p.x, p.y, p.z, s.kind === 'plasma' ? 34 : 16, { color: d.color, speed: s.kind === 'plasma' ? 7 : 5, life: 0.7, size: 0.22, up: 2 });
+      fx.burst(p.x, p.y, p.z, 10, { color: 0xffc070, speed: 3, life: 0.4, size: 0.3, grav: 0 });
+      fx.flash(p.x, p.y + 0.3, p.z, d.color, 9, 0.25); G.audio.play('boom', s.kind === 'plasma' ? 1 : 0.6, p); if (dist < 9) shake(0.35 * (1 - dist / 9));
+      if (hit && hit.wall) fx.decal(p.x, p.y, p.z, hit.wall.nx, hit.wall.ny, hit.wall.nz, s.kind === 'plasma' ? 1.3 : 0.6, 0x7a30c0);
+    } else fx.burst(p.x, p.y, p.z, 4, { color: d.color, speed: 2.5, life: 0.25, size: 0.09 });
   }
 }

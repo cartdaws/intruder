@@ -1,328 +1,83 @@
-import { clamp, rand } from './util.js';
-import { Soundscape } from './soundscape.js';
+// All sound is synthesised with WebAudio: nothing to download, and it starts on the first tap (browsers require a gesture).
+import { G } from './engine.js';
+import { save } from './save.js';
 
-// Fully synthesized sound; the context is only created after the player clicks Play.
-export class Audio {
-  constructor() {
-    this.ctx = null;
-    this.volume = 0.7;
-    this.siren = null;
-  }
-
-  init() {
-    if (this.ctx) { this.ctx.resume(); return; }
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    const ctx = (this.ctx = new AC());
-    this.master = ctx.createGain();
-    this.master.gain.value = this.volume;
-    const comp = ctx.createDynamicsCompressor();
-    this.master.connect(comp);
-    comp.connect(ctx.destination);
-    const len = ctx.sampleRate * 2;
-    this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = this.noiseBuf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-    this.scape = new Soundscape(this);
-    if (this.wantScene) this.scape.setScene(this.wantScene);
-  }
-
-  // What this place sounds like (soundscape.js). Safe to call before the context exists.
-  scene(name) { this.wantScene = name; if (this.scape) this.scape.setScene(name); }
-  combatMusic(on) { if (this.scape) this.scape.setCombat(on); }
-  tickScene(dt) { if (this.scape) this.scape.update(dt); }
-
-  setVolume(v) {
-    this.volume = v;
-    if (this.master) this.master.gain.value = v;
-  }
-  suspend() { if (this.ctx) this.ctx.suspend(); }
-  resume() { if (this.ctx) this.ctx.resume(); }
-
-  out(vol, pan) {
-    const g = this.ctx.createGain();
-    g.gain.value = vol;
-    if (pan && this.ctx.createStereoPanner) {
-      const p = this.ctx.createStereoPanner();
-      p.pan.value = clamp(pan, -1, 1);
-      g.connect(p);
-      p.connect(this.master);
-    } else g.connect(this.master);
-    return g;
-  }
-
-  tone(o, { type = 'sine', f0 = 440, f1 = f0, dur = 0.2, vol = 0.3, attack = 0.004, delay = 0, filter, q = 1 }) {
-    const ctx = this.ctx;
-    const t = ctx.currentTime + delay;
-    const osc = ctx.createOscillator();
-    osc.type = type;
-    osc.frequency.setValueAtTime(f0, t);
-    osc.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(vol, t + attack);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    let node = osc;
-    if (filter) {
-      const bq = ctx.createBiquadFilter();
-      bq.type = filter.type;
-      bq.frequency.value = filter.f;
-      bq.Q.value = q;
-      osc.connect(bq);
-      node = bq;
-    }
-    node.connect(g);
-    g.connect(o);
-    osc.start(t);
-    osc.stop(t + dur + 0.05);
-  }
-
-  noise(o, { dur = 0.2, vol = 0.3, type = 'lowpass', f0 = 1000, f1 = f0, q = 1, delay = 0, attack = 0.003 }) {
-    const ctx = this.ctx;
-    const t = ctx.currentTime + delay;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noiseBuf;
-    src.loop = true;
-    const bq = ctx.createBiquadFilter();
-    bq.type = type;
-    bq.Q.value = q;
-    bq.frequency.setValueAtTime(f0, t);
-    bq.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(vol, t + attack);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(bq);
-    bq.connect(g);
-    g.connect(o);
-    src.start(t, Math.random());
-    src.stop(t + dur + 0.05);
-  }
-
-  play(name, { vol = 1, pan = 0 } = {}) {
-    if (!this.ctx || this.ctx.state !== 'running') return;
-    const o = this.out(vol, pan);
-    const p = rand(0.94, 1.06);
-    switch (name) {
-      case 'shot': // a wet, muscular spit: squelch, throat thump, spray
-        this.noise(o, { dur: 0.09, vol: 0.34, type: 'bandpass', f0: 1900 * p, f1: 420, q: 2.5 });
-        this.tone(o, { type: 'triangle', f0: 460 * p, f1: 170, dur: 0.08, vol: 0.14 });
-        this.tone(o, { type: 'sine', f0: 150, f1: 44, dur: 0.17, vol: 0.46 });
-        this.noise(o, { dur: 0.06, vol: 0.16, type: 'highpass', f0: 3200, delay: 0.015 });
-        break;
-      case 'impact': // splat
-        this.noise(o, { dur: 0.11, vol: 0.2, type: 'lowpass', f0: 1600, f1: 280 });
-        this.tone(o, { type: 'sine', f0: 320 * p, f1: 110, dur: 0.1, vol: 0.09 });
-        break;
-      case 'hit':
-        this.tone(o, { type: 'square', f0: 1500, f1: 1200, dur: 0.045, vol: 0.09 });
-        break;
-      case 'kill':
-        this.tone(o, { type: 'triangle', f0: 1100, f1: 260, dur: 0.24, vol: 0.2 });
-        this.tone(o, { type: 'sine', f0: 1700, f1: 2300, dur: 0.18, vol: 0.1, delay: 0.04 });
-        break;
-      case 'bugWarn':
-        this.tone(o, { type: 'sawtooth', f0: 1000, f1: 2100, dur: 0.5, vol: 0.12, filter: { type: 'bandpass', f: 1800 }, q: 3 });
-        this.noise(o, { dur: 0.45, vol: 0.06, type: 'bandpass', f0: 3600, q: 4 });
-        break;
-      case 'bugLunge':
-        this.noise(o, { dur: 0.28, vol: 0.28, type: 'bandpass', f0: 600, f1: 2400, q: 1.5 });
-        break;
-      case 'enemyDie':
-        this.noise(o, { dur: 0.4, vol: 0.3, type: 'lowpass', f0: 3000, f1: 200 });
-        this.tone(o, { type: 'sawtooth', f0: 380, f1: 50, dur: 0.35, vol: 0.14 });
-        break;
-      case 'droneCharge':
-        this.tone(o, { type: 'sine', f0: 380, f1: 1700, dur: 0.75, vol: 0.14, attack: 0.3 });
-        this.tone(o, { type: 'triangle', f0: 190, f1: 850, dur: 0.75, vol: 0.08, attack: 0.3 });
-        break;
-      case 'droneShot':
-        this.tone(o, { type: 'square', f0: 1000, f1: 240, dur: 0.14, vol: 0.12, filter: { type: 'lowpass', f: 2600 } });
-        this.noise(o, { dur: 0.05, vol: 0.1, type: 'highpass', f0: 2500 });
-        break;
-      case 'explosion':
-        this.noise(o, { dur: 1.3, vol: 0.9, type: 'lowpass', f0: 1400, f1: 60, attack: 0.005 });
-        this.tone(o, { type: 'sine', f0: 90, f1: 28, dur: 0.9, vol: 0.9 });
-        this.noise(o, { dur: 0.25, vol: 0.4, type: 'highpass', f0: 2000 });
-        break;
-      case 'fuse':
-        for (let i = 0; i < 4; i++) this.noise(o, { dur: 0.07, vol: 0.13, type: 'bandpass', f0: 3000 + i * 400, q: 3, delay: i * 0.11 });
-        this.tone(o, { type: 'square', f0: 900, f1: 900, dur: 0.05, vol: 0.06, delay: 0.1 });
-        this.tone(o, { type: 'square', f0: 1200, f1: 1200, dur: 0.05, vol: 0.06, delay: 0.3 });
-        break;
-      case 'door':
-        this.noise(o, { dur: 0.8, vol: 0.4, type: 'lowpass', f0: 380, f1: 120 });
-        this.tone(o, { type: 'square', f0: 60, f1: 50, dur: 0.8, vol: 0.12 });
-        this.noise(o, { dur: 0.1, vol: 0.5, type: 'lowpass', f0: 900, f1: 300, delay: 0.7 });
-        break;
-      case 'lockdown':
-        for (let i = 0; i < 3; i++) this.tone(o, { type: 'square', f0: 880, f1: 880, dur: 0.18, vol: 0.14, delay: i * 0.26 });
-        break;
-      case 'unlock':
-        this.tone(o, { type: 'sine', f0: 660, f1: 660, dur: 0.15, vol: 0.2 });
-        this.tone(o, { type: 'sine', f0: 990, f1: 990, dur: 0.3, vol: 0.2, delay: 0.14 });
-        break;
-      case 'dash':
-        this.noise(o, { dur: 0.22, vol: 0.28, type: 'bandpass', f0: 500, f1: 2800, q: 1 });
-        break;
-      case 'jump':
-        this.tone(o, { type: 'sine', f0: 150, f1: 80, dur: 0.12, vol: 0.2 });
-        break;
-      case 'land':
-        this.tone(o, { type: 'sine', f0: 100, f1: 45, dur: 0.14, vol: 0.28 });
-        break;
-      case 'vitals': // heart-monitor tick
-        this.tone(o, { type: 'sine', f0: 1040, f1: 1040, dur: 0.09, vol: 0.12 });
-        break;
-      case 'surge': // electrical overload rising
-        this.tone(o, { type: 'sawtooth', f0: 70, f1: 640, dur: 2.4, vol: 0.2, attack: 1.2, filter: { type: 'lowpass', f: 1800 } });
-        this.noise(o, { dur: 2.4, vol: 0.18, type: 'bandpass', f0: 800, f1: 5200, q: 1.5, attack: 0.6 });
-        break;
-      case 'alert': // console alarm double beep
-        this.tone(o, { type: 'triangle', f0: 880, f1: 880, dur: 0.12, vol: 0.05 });
-        this.tone(o, { type: 'triangle', f0: 880, f1: 880, dur: 0.12, vol: 0.05, delay: 0.2 });
-        break;
-      case 'crack':
-        this.noise(o, { dur: 0.12, vol: 0.5, type: 'highpass', f0: 4000, f1: 2200 });
-        this.tone(o, { type: 'triangle', f0: 3400, f1: 900, dur: 0.1, vol: 0.12 });
-        break;
-      case 'shatter':
-        this.noise(o, { dur: 0.9, vol: 0.7, type: 'highpass', f0: 2500, f1: 900, attack: 0.002 });
-        this.noise(o, { dur: 0.5, vol: 0.4, type: 'bandpass', f0: 5200, q: 2 });
-        this.tone(o, { type: 'sine', f0: 140, f1: 50, dur: 0.5, vol: 0.5 });
-        break;
-      case 'announce': // ship AI chime
-        this.tone(o, { type: 'sine', f0: 660, f1: 660, dur: 0.35, vol: 0.14 });
-        this.tone(o, { type: 'sine', f0: 880, f1: 880, dur: 0.5, vol: 0.14, delay: 0.22 });
-        break;
-      case 'cry':       // the elder, being taken: a falling wail with a shake in it
-        this.tone(o, { type: 'triangle', f0: 620, f1: 240, dur: 1.5, vol: 0.5, attack: 0.08 });
-        this.tone(o, { type: 'sine', f0: 930, f1: 300, dur: 1.2, vol: 0.28, attack: 0.1 });
-        break;
-      case 'flyby':     // a fighter passing low overhead
-        this.noise(o, { dur: 1.3, vol: 0.9, type: 'bandpass', f0: 500, f1: 2500, q: 0.7 });
-        this.noise(o, { dur: 1.4, vol: 0.5, type: 'lowpass', f0: 260, f1: 100, delay: 0.5 });
-        break;
-      case 'botstep':
-        this.noise(o, { dur: 0.04, vol: 0.5, type: 'bandpass', f0: 900, q: 1.5 });
-        this.tone(o, { type: 'square', f0: 110, f1: 70, dur: 0.05, vol: 0.14 });
-        break;
-      case 'bootup':    // a machine coming out of standby
-        this.tone(o, { type: 'sawtooth', f0: 70, f1: 300, dur: 0.75, vol: 0.14, attack: 0.05 });
-        this.tone(o, { type: 'square', f0: 880, dur: 0.05, vol: 0.09, delay: 0.72 });
-        this.tone(o, { type: 'square', f0: 1320, dur: 0.05, vol: 0.09, delay: 0.82 });
-        break;
-      case 'step':
-        this.noise(o, { dur: 0.06, vol: 0.2, type: 'lowpass', f0: 500, f1: 200 });
-        break;
-      case 'pa': // intercom / PA: speaker click and a short wash of line noise, no voiced tone
-        this.noise(o, { dur: 0.05, vol: 0.5, type: 'highpass', f0: 1500 });
-        this.noise(o, { dur: 0.7, vol: 0.07, type: 'bandpass', f0: 1700, q: 1.2, delay: 0.04 });
-        break;
-      case 'memory': // reversed swell into a soft airy wash
-        this.noise(o, { dur: 1.4, vol: 0.28, type: 'bandpass', f0: 300, f1: 6000, q: 0.8, attack: 1.1 });
-        this.tone(o, { type: 'sine', f0: 180, f1: 720, dur: 1.4, vol: 0.12, attack: 1.0 });
-        break;
-      case 'memoryOut':
-        this.noise(o, { dur: 0.9, vol: 0.25, type: 'bandpass', f0: 5000, f1: 200, q: 0.8 });
-        this.tone(o, { type: 'sine', f0: 600, f1: 90, dur: 0.9, vol: 0.12 });
-        break;
-      case 'servo': // motor and rail travel
-        this.tone(o, { type: 'sawtooth', f0: 70, f1: 150, dur: 2.2, vol: 0.07, attack: 0.5, filter: { type: 'lowpass', f: 600 } });
-        this.noise(o, { dur: 2.2, vol: 0.1, type: 'bandpass', f0: 400, f1: 900, q: 2, attack: 0.4 });
-        break;
-      case 'scan': // examination probe extending
-        this.tone(o, { type: 'sine', f0: 320, f1: 1100, dur: 1.4, vol: 0.1, attack: 0.5 });
-        this.noise(o, { dur: 1.4, vol: 0.08, type: 'bandpass', f0: 2000, f1: 6000, q: 3, attack: 0.5 });
-        break;
-      case 'spark':
-        this.noise(o, { dur: 0.35, vol: 0.6, type: 'highpass', f0: 3000, f1: 1200, attack: 0.001 });
-        for (let i = 0; i < 4; i++) this.noise(o, { dur: 0.04, vol: 0.3, type: 'highpass', f0: 4000, delay: 0.05 + i * 0.06 });
-        break;
-      case 'powerdown':
-        this.tone(o, { type: 'sine', f0: 420, f1: 38, dur: 1.5, vol: 0.28 });
-        this.tone(o, { type: 'sawtooth', f0: 220, f1: 30, dur: 1.2, vol: 0.12, filter: { type: 'lowpass', f: 500 } });
-        this.noise(o, { dur: 1.0, vol: 0.15, type: 'lowpass', f0: 900, f1: 60 });
-        break;
-      case 'hiss': // gas escaping from a vent
-        this.noise(o, { dur: 1.6, vol: 0.2, type: 'highpass', f0: 3800, f1: 6800, q: 0.8 });
-        this.noise(o, { dur: 1.9, vol: 0.12, type: 'bandpass', f0: 1200, f1: 500, q: 1.2, delay: 0.1 });
-        break;
-      case 'groan': // stressed metal
-        this.tone(o, { type: 'sawtooth', f0: 90, f1: 62, dur: 1.2, vol: 0.14, attack: 0.3, filter: { type: 'lowpass', f: 400 }, q: 6 });
-        this.noise(o, { dur: 1.2, vol: 0.12, type: 'bandpass', f0: 250, f1: 150, q: 5, attack: 0.3 });
-        break;
-      case 'clatter':
-        this.tone(o, { type: 'triangle', f0: 2600, f1: 1500, dur: 0.1, vol: 0.12 });
-        this.tone(o, { type: 'triangle', f0: 1900, f1: 1100, dur: 0.12, vol: 0.1, delay: 0.17 });
-        this.noise(o, { dur: 0.06, vol: 0.3, type: 'highpass', f0: 3000, delay: 0.17 });
-        this.noise(o, { dur: 0.05, vol: 0.2, type: 'highpass', f0: 3000, delay: 0.32 });
-        break;
-      case 'swallow': // wet pull as gel draws something in
-        this.tone(o, { type: 'sine', f0: 210, f1: 70, dur: 0.28, vol: 0.32, filter: { type: 'lowpass', f: 500 } });
-        this.noise(o, { dur: 0.22, vol: 0.14, type: 'bandpass', f0: 500, f1: 200, q: 3 });
-        break;
-      case 'heartbeat':
-        this.tone(o, { type: 'sine', f0: 70, f1: 38, dur: 0.16, vol: 0.9 });
-        this.tone(o, { type: 'sine', f0: 62, f1: 34, dur: 0.18, vol: 0.7, delay: 0.2 });
-        break;
-      case 'hurt':
-        this.tone(o, { type: 'sawtooth', f0: 220, f1: 60, dur: 0.28, vol: 0.2, filter: { type: 'lowpass', f: 900 } });
-        this.noise(o, { dur: 0.15, vol: 0.2, type: 'lowpass', f0: 800 });
-        break;
-      case 'death':
-        this.tone(o, { type: 'sawtooth', f0: 300, f1: 30, dur: 1.2, vol: 0.2, filter: { type: 'lowpass', f: 700 } });
-        break;
-      case 'gel':
-        this.noise(o, { dur: 0.6, vol: 0.2, type: 'bandpass', f0: 250, f1: 900, q: 2 });
-        this.tone(o, { type: 'sine', f0: 120, f1: 220, dur: 0.6, vol: 0.2 });
-        break;
-      case 'absorb':
-        this.tone(o, { type: 'sine', f0: 300, f1: 1400, dur: 1.2, vol: 0.14, attack: 0.5 });
-        this.noise(o, { dur: 1.2, vol: 0.12, type: 'bandpass', f0: 4000, f1: 800, q: 3 });
-        break;
-      case 'crystal':
-        [0, 4, 7, 12].forEach((s, i) => {
-          const f = 523 * Math.pow(2, s / 12);
-          this.tone(o, { type: 'sine', f0: f, f1: f, dur: 0.6, vol: 0.12, delay: i * 0.1 });
-        });
-        break;
-    }
-  }
-
-  startSiren() {
-    if (!this.ctx || this.siren) return;
-    const ctx = this.ctx;
-    const o = ctx.createOscillator();
-    o.type = 'triangle';
-    o.frequency.value = 440;
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 0.8;
-    const lg = ctx.createGain();
-    lg.gain.value = 90;
-    lfo.connect(lg);
-    lg.connect(o.frequency);
-    const f = ctx.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.value = 700;
-    const g = ctx.createGain();
-    g.gain.value = 0.0001;
-    g.gain.linearRampToValueAtTime(0.03, ctx.currentTime + 0.6);
-    g.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 9);      // it dies away by itself after a few seconds
-    o.connect(f); f.connect(g); g.connect(this.master);
-    o.start(); lfo.start();
-    this.siren = { o, lfo, g };
-    setTimeout(() => { if (this.siren && this.siren.o === o) this.stopSiren(); }, 9500);
-  }
-
-  stopSiren() {
-    if (!this.siren) return;
-    const { o, lfo, g } = this.siren;
-    const t = this.ctx.currentTime;
-    g.gain.cancelScheduledValues(t);
-    g.gain.setValueAtTime(g.gain.value, t);
-    g.gain.linearRampToValueAtTime(0.0001, t + 0.4);
-    o.stop(t + 0.5); lfo.stop(t + 0.5);
-    this.siren = null;
-  }
+let ac = null, master = null, noiseBuf = null, amb = null;
+function ctx() {
+  if (ac) return ac;
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+  ac = new AC(); master = ac.createGain(); master.gain.value = save.data.settings.volume; master.connect(ac.destination);
+  noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+  const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return ac;
 }
+function env(g, t, a, d, v) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + d); }
+function tone(type, f0, f1, dur, vol, when = 0) {
+  const t = ac.currentTime + when, o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  env(g, t, 0.005, dur, vol); o.connect(g).connect(master); o.start(t); o.stop(t + dur + 0.05);
+}
+function noise(freq, q, dur, vol, type = 'bandpass', when = 0, f1 = null) {
+  const t = ac.currentTime + when, s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+  s.buffer = noiseBuf; s.loop = true; f.type = type; f.frequency.setValueAtTime(freq, t); if (f1) f.frequency.exponentialRampToValueAtTime(f1, t + dur); f.Q.value = q;
+  env(g, t, 0.004, dur, vol); s.connect(f).connect(g).connect(master); s.start(t, Math.random()); s.stop(t + dur + 0.05);
+}
+// Each sound is a few layered tones and noise bursts. v scales the volume (distance falloff is done by the caller).
+const S = {
+  spine: (v) => { noise(900, 1.2, 0.09, 0.5 * v, 'bandpass', 0, 300); tone('sine', 190, 70, 0.12, 0.5 * v); tone('triangle', 520, 240, 0.05, 0.15 * v); },
+  splat: (v) => { noise(500, 0.8, 0.12, 0.3 * v, 'lowpass', 0, 150); },
+  hit: (v) => { noise(2600, 2, 0.05, 0.35 * v); tone('square', 320, 160, 0.05, 0.12 * v); },
+  hurt: (v) => { tone('sawtooth', 160, 60, 0.25, 0.4 * v); noise(300, 0.7, 0.2, 0.4 * v, 'lowpass'); },
+  bolt: (v) => { tone('sawtooth', 900, 240, 0.12, 0.16 * v); },
+  dart: (v) => { tone('square', 1500, 700, 0.06, 0.09 * v); },
+  plasma: (v) => { tone('sine', 120, 60, 0.5, 0.4 * v); tone('sawtooth', 240, 90, 0.4, 0.12 * v); },
+  needle: (v) => { tone('triangle', 2000, 900, 0.07, 0.1 * v); },
+  seeker: (v) => { noise(700, 3, 0.5, 0.25 * v, 'bandpass', 0, 2200); tone('sine', 300, 600, 0.4, 0.1 * v); },
+  boom: (v) => { noise(180, 0.6, 0.6, 0.8 * v, 'lowpass', 0, 50); tone('sine', 90, 30, 0.5, 0.6 * v); },
+  shutdown: (v) => { tone('sawtooth', 500, 40, 0.7, 0.3 * v); noise(4000, 4, 0.3, 0.2 * v); tone('square', 60, 40, 0.4, 0.2 * v, 0.3); },
+  spark: (v) => { noise(5000, 6, 0.04, 0.2 * v); },
+  absorb: (v) => { tone('sine', 140, 420, 0.9, 0.3 * v); noise(1200, 2, 0.9, 0.2 * v, 'bandpass', 0, 3000); },
+  absorbDone: (v) => { tone('sine', 330, 660, 0.35, 0.3 * v); tone('sine', 495, 990, 0.45, 0.2 * v, 0.08); },
+  tongue: (v) => { noise(600, 1.5, 0.3, 0.3 * v, 'bandpass', 0, 1800); },
+  door: (v) => { noise(220, 1, 0.5, 0.3 * v, 'lowpass'); tone('sine', 80, 110, 0.4, 0.2 * v); },
+  lock: (v) => { tone('square', 110, 70, 0.3, 0.3 * v); tone('square', 110, 70, 0.3, 0.3 * v, 0.35); },
+  alarm: (v) => { for (let i = 0; i < 3; i++) tone('triangle', 420, 620, 0.5, 0.14 * v, i * 0.6); },
+  clear: (v) => { tone('sine', 440, 440, 0.2, 0.2 * v); tone('sine', 660, 660, 0.3, 0.2 * v, 0.18); },
+  pickup: (v) => { tone('sine', 520, 1040, 0.25, 0.25 * v); },
+  key: (v) => { tone('square', 880, 880, 0.08, 0.15 * v); tone('square', 1320, 1320, 0.15, 0.15 * v, 0.1); },
+  jump: (v) => { noise(300, 1, 0.12, 0.15 * v, 'lowpass'); },
+  land: (v) => { noise(140, 0.8, 0.16, 0.4 * v, 'lowpass'); },
+  step: (v) => { noise(260, 1.2, 0.07, 0.12 * v, 'lowpass'); },
+  boot: (v) => { tone('square', 200, 800, 0.3, 0.12 * v); },
+  death: (v) => { tone('sawtooth', 220, 30, 1.6, 0.5 * v); noise(200, 0.5, 1.5, 0.5 * v, 'lowpass', 0, 40); },
+  ui: (v) => { tone('sine', 700, 900, 0.06, 0.15 * v); },
+  chime: (v) => { tone('sine', 523, 523, 0.8, 0.12 * v); tone('sine', 784, 784, 1.0, 0.1 * v, 0.15); },
+  rumble: (v) => { noise(70, 0.5, 2.2, 0.9 * v, 'lowpass'); },
+  zap: (v) => { noise(3000, 5, 0.25, 0.3 * v); tone('sawtooth', 1200, 100, 0.25, 0.15 * v); },
+};
+export const audio = {
+  unlock() { const c = ctx(); if (c && c.state === 'suspended') c.resume(); },
+  setVolume(v) { save.data.settings.volume = v; save.write(); if (master) master.gain.value = v; },
+  // name, volume 0..1, optional world position (quieter with distance from the camera)
+  play(name, vol = 1, pos = null) {
+    if (!ac || ac.state !== 'running' || !S[name]) return;
+    if (G.timeScale > 2) return; // sped-up test runs stay silent
+    if (pos) { const d = pos.distanceTo(G.camera.position); vol *= 1 / (1 + d * d * 0.012); if (vol < 0.02) return; }
+    try { S[name](vol); } catch { /* a failed sound must never break the game */ }
+  },
+  // Looping background bed: 'ship' (low machine hum), 'home' (soft open chord), 'alarm' (tense pulse), or null for silence.
+  ambience(kind) {
+    if (!ctx()) return;
+    if (amb) { const a = amb; a.g.gain.setTargetAtTime(0, ac.currentTime, 0.5); setTimeout(() => a.nodes.forEach((n) => { try { n.stop(); } catch { /* already stopped */ } }), 2500); amb = null; }
+    if (!kind) return;
+    const g = ac.createGain(); g.gain.value = 0; g.connect(master); const nodes = [];
+    const osc = (type, f, v, detune = 0) => { const o = ac.createOscillator(), og = ac.createGain(); o.type = type; o.frequency.value = f; o.detune.value = detune; og.gain.value = v; o.connect(og).connect(g); o.start(); nodes.push(o); return o; };
+    if (kind === 'ship') { osc('sine', 55, 0.5); osc('sine', 82.5, 0.2, 6); osc('triangle', 110, 0.06, -8); }
+    if (kind === 'alarm') { osc('sine', 49, 0.5); osc('sawtooth', 98, 0.05); const l = ac.createOscillator(), lg = ac.createGain(); l.frequency.value = 1.6; lg.gain.value = 0.25; l.connect(lg).connect(g.gain); l.start(); nodes.push(l); }
+    if (kind === 'home') { [196, 247, 294, 370, 440].forEach((f, i) => osc('sine', f, 0.12 - i * 0.015, i * 5 - 8)); }
+    if (kind === 'dread') { osc('sine', 41, 0.6); osc('sine', 43.5, 0.5); osc('sawtooth', 61, 0.03); }
+    g.gain.setTargetAtTime(kind === 'home' ? 0.22 : 0.3, ac.currentTime, 1.2);
+    amb = { g, nodes, kind };
+  },
+};
+G.audio = audio;

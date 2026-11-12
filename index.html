@@ -4,138 +4,38 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="theme-color" content="#02040a" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="INTRUDER" />
-  <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="icon" href="/icons/icon-192.png" />
-  <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+  <meta name="theme-color" content="#02040a" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-180.png" />
+  <title>INTRUDER</title>
   <style>
-    html, body { background: #02040a; }
+    html, body { margin: 0; height: 100%; background: #02040a; overflow: hidden; }
     #boot { position: fixed; inset: 0; z-index: 99; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #02040a; color: #9ff5ea; font: 13px/1.5 system-ui, sans-serif; letter-spacing: .3em; text-align: center; padding: 0 8vw; }
     #boot h1 { margin: 0; font-size: 30px; font-weight: 300; letter-spacing: .45em; padding-left: .45em; color: #e4fffa; }
-    #boot-bar { width: min(280px, 60vw); height: 2px; background: rgba(159, 245, 234, .18); }
-    #boot-bar i { display: block; height: 100%; width: 0; background: #9ff5ea; transition: width .25s; }
-    #boot-msg { font-size: 10px; opacity: .75; }
-    #boot button { margin-top: 8px; padding: 12px 26px; color: #e4fffa; background: rgba(30, 130, 120, .35); border: 1px solid rgba(159, 245, 234, .6); font: inherit; letter-spacing: .2em; }
+    #boot button { margin-top: 8px; padding: 12px 26px; color: #e4fffa; background: rgba(30,130,120,.35); border: 1px solid rgba(159,245,234,.6); font: inherit; }
   </style>
-  <title>INTRUDER</title>
 </head>
 <body>
-  <div id="boot"><h1>INTRUDER</h1><div id="boot-bar"><i></i></div><div id="boot-msg">LOADING</div></div>
+  <div id="boot"><h1>INTRUDER</h1><div id="boot-msg">LOADING</div></div>
   <script>
-    // Before anything else can fail: a progress bar, and failures shown on screen, because a phone has no console to read them in.
+    // Failures are shown on screen, because a phone has no console to read them in.
     (function () {
-      var boot = document.getElementById('boot'), best = 0;
-      window.__intruderLoad = function (p, msg) { best = Math.max(best, p); var i = boot.querySelector('i'), t = document.getElementById('boot-msg'); if (!i) return; i.style.width = Math.round(best * 100) + '%'; if (msg) t.textContent = msg; };
-      window.__intruderDone = function () { boot.style.display = 'none'; window.__intruderBooted = true; };
-      window.__intruderFail = function (msg, always) {
-        if (window.__intruderBooted && !always) return;
-        boot.style.display = 'flex';
-        boot.innerHTML = '<h1>INTRUDER</h1><div id="boot-msg" style="letter-spacing:.08em;font-size:13px;max-width:80vw">' + String(msg).replace(/</g, '&lt;') + '</div><button onclick="location.reload()">RELOAD</button>';
+      var boot = document.getElementById('boot');
+      window.__bootDone = function () { boot.style.display = 'none'; window.__booted = true; };
+      window.__bootFail = function (msg) {
+        (window.__errors = window.__errors || []).push(String(msg));
+        if (window.__booted) return;
+        boot.innerHTML = '<h1>INTRUDER</h1><div style="letter-spacing:.05em;max-width:80vw">' + String(msg).replace(/</g, '&lt;') + '</div><button onclick="location.reload()">RELOAD</button>';
       };
-      window.addEventListener('error', function (e) { window.__intruderFail('Could not start: ' + (e.message || (e.target && (e.target.src || e.target.href)) || 'a file failed to load')); }, true);
-      window.addEventListener('unhandledrejection', function (e) { window.__intruderFail('Could not start: ' + ((e.reason && e.reason.message) || e.reason)); });
-      var c = document.createElement('canvas');
-      if (!c.getContext('webgl2')) window.__intruderFail('This browser has no WebGL 2. Update it, or try Chrome or Safari.');
+      window.addEventListener('error', function (e) { window.__bootFail('Error: ' + (e.message || 'a file failed to load')); }, true);
+      window.addEventListener('unhandledrejection', function (e) { window.__bootFail('Error: ' + ((e.reason && e.reason.message) || e.reason)); });
     })();
   </script>
-  <canvas id="game"></canvas>
-
-  <div id="hud" class="hidden">
-    <div id="crosshair"><i></i><i></i><i></i><i></i></div>
-    <div id="hitmarker"><b></b><b></b><b></b><b></b></div>
-    <div id="vignette"></div>
-    <div id="lowhp"></div>
-    <div id="dmgdir"><i></i></div>
-    <div id="health">
-      <span class="label">VITALITY</span>
-      <div class="bar"><div id="healthFill"></div></div>
-      <span id="healthNum">100</span>
-      <span id="rewardNote"></span>
-    </div>
-    <div id="weapon">
-      <span id="weaponName">SHARDCASTER</span>
-      <div class="dash"><span class="label">DASH</span><div class="bar"><div id="dashFill"></div></div></div>
-    </div>
-    <div id="goal"></div>
-    <div id="objective"></div>
-    <div id="hint"></div>
-    <div id="prompt"></div>
-    <div id="hold"><i></i></div>
-  </div>
-
-  <div id="rotate"><span>ROTATE YOUR DEVICE<br>TO LANDSCAPE</span></div>
-  <canvas id="memory" class="hidden"></canvas>
-  <div id="subtitle" class="hidden"><b></b><span></span></div>
-  <div id="banner"></div>
-  <div id="fade"></div>
-  <div id="skip" class="hidden">SKIP INTRO &nbsp;<b>ENTER</b></div>
-
-  <div id="menu-start" class="menu start">
-    <div class="scan"></div>
-    <div class="start-left">
-      <div class="tag">ORBIT OF THE LOST WORLD <i></i> SIGNAL: ONE SURVIVOR</div>
-      <h1>INTRUDER</h1>
-      <p class="tagline">They burned your world and took your people.<br>Find your kind. Then take Earth.</p>
-      <nav class="list">
-        <button id="btn-play" class="primary"><b>01</b><span>PLAY</span></button>
-        <button id="btn-new" class="hidden"><b>02</b><span>NEW GAME <small>play the introduction</small></span></button>
-      <button id="btn-space" class="hidden">OPEN SPACE</button>
-        <button id="btn-opts"><b>03</b><span>OPTIONS</span></button>
-        <button id="btn-help"><b>04</b><span>CONTROLS</span></button>
-      </nav>
-      <div class="status"><span id="st-hp">VITALITY 100</span><span id="st-cp">THE VALLEY</span></div>
-    </div>
-    <aside id="panel-opts" class="panel hidden">
-      <h3>OPTIONS</h3>
-      <button id="btn-gfx" class="minor">GRAPHICS: REALISTIC</button>
-      <div class="settings">
-        <label>VOLUME <input id="set-volume-2" type="range" min="0" max="1" step="0.01" value="0.7" /></label>
-        <label>SENSITIVITY <input id="set-sens-2" type="range" min="0.2" max="3" step="0.05" value="1" /></label>
-      </div>
-      <button class="minor close">BACK</button>
-    </aside>
-    <aside id="panel-help" class="panel hidden">
-      <h3>CONTROLS</h3>
-      <table>
-        <tr><td>W A S D</td><td>move</td></tr><tr><td>MOUSE</td><td>look</td></tr><tr><td>SPACE</td><td>jump</td></tr><tr><td>SHIFT</td><td>dash</td></tr>
-        <tr><td>LEFT CLICK</td><td>fire the Shardcaster</td></tr><tr><td>RIGHT CLICK</td><td>absorb a disabled robot</td></tr><tr><td>ESC</td><td>pause</td></tr>
-      </table>
-      <p class="note">Disable a robot, get close, then absorb it: you heal and grow stronger for good.<br>On a phone: left thumb moves, right thumb looks, buttons are on screen.</p>
-      <button class="minor close">BACK</button>
-    </aside>
-    <div class="foot">ABSORB &nbsp;·&nbsp; ADAPT &nbsp;·&nbsp; AVENGE</div>
-  </div>
-
-  <div id="menu-pause" class="menu hidden">
-    <h2>PAUSED</h2>
-    <div id="journal"></div>
-    <button id="btn-resume" class="primary">RESUME</button>
-    <button id="btn-restart">RESTART FROM CHECKPOINT</button>
-    <button id="btn-gfx2">GRAPHICS: REALISTIC</button>
-    <div class="settings">
-      <label>VOLUME <input id="set-volume" type="range" min="0" max="1" step="0.01" value="0.7" /></label>
-      <label>SENSITIVITY <input id="set-sens" type="range" min="0.2" max="3" step="0.05" value="1" /></label>
-    </div>
-  </div>
-
-  <div id="menu-dead" class="menu hidden">
-    <h2 class="danger">SPECIMEN LOST</h2>
-    <button id="btn-retry" class="primary">RESTART</button>
-  </div>
-
-  <div id="menu-complete" class="menu hidden">
-    <h2 id="card-title">A HANGAR FULL OF SHIPS</h2>
-    <p class="chapter" id="card-text">The fleet has left for Earth with forty-one thousand of your kind, the elder among them.<br>Find them. Free them. Then take Earth, and make them pay for every valley.</p>
-    <p class="chapter" id="card-stats"></p>
-    <small class="chapter-tag" id="card-tag">CHAPTER ONE COMPLETE &nbsp;·&nbsp; THE HALCYON</small>
-    <button id="btn-flyon" class="primary">TAKE THE SHIP</button>
-    <button id="btn-replay">NEW RUN</button>
-    <button id="btn-intro">REPLAY FROM THE START</button>
-  </div>
-
+  <canvas id="view"></canvas>
+  <div id="ui"></div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

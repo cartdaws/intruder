@@ -1,0 +1,81 @@
+:root { --teal: #7ff5e6; --teal2: #1fd8c2; --dim: rgba(127,245,230,.55); --red: #ff4a36; --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; --safe-l: env(safe-area-inset-left, 0px); --safe-r: env(safe-area-inset-right, 0px); --safe-b: env(safe-area-inset-bottom, 0px); }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #02040a; color: var(--teal); font-family: var(--font); user-select: none; -webkit-user-select: none; touch-action: none; overscroll-behavior: none; }
+#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+#ui { position: fixed; inset: 0; pointer-events: none; }
+
+/* ---- HUD ---- */
+.hud { position: absolute; inset: 0; display: none; text-transform: uppercase; letter-spacing: .16em; font-size: 12px; }
+.hud .vig { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.55) 100%); }
+.hud .hurt { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 35%, rgba(255,40,20,.75) 100%); }
+.hud .lb { position: absolute; left: 0; right: 0; height: 0; background: #000; transition: height .8s ease; } .hud .lb.top { top: 0; } .hud .lb.bot { bottom: 0; }
+.hud.boxed .lb { height: 11vh; }
+.hud .cross { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px; }
+.hud .cross i { position: absolute; left: 9px; top: 9px; width: 4px; height: 4px; border-radius: 50%; background: #dffff9; box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+.hud .cross::before, .hud .cross::after { content: ""; position: absolute; inset: 0; border: 2px solid transparent; border-radius: 50%; opacity: 0; }
+.hud .cross.hit::before { border-color: #fff; animation: hit .18s ease-out; }
+.hud .cross.kill::after { border-color: #4a9cff; animation: kill .45s ease-out; }
+@keyframes hit { from { opacity: 1; transform: scale(.6); } to { opacity: 0; transform: scale(1.3); } }
+@keyframes kill { from { opacity: 1; transform: scale(.8); } to { opacity: 0; transform: scale(3); } }
+.hud .hp { position: absolute; left: calc(18px + var(--safe-l)); bottom: calc(14px + var(--safe-b)); display: flex; align-items: baseline; gap: 8px; text-shadow: 0 1px 3px #000; }
+.hud .hp b { font-size: 30px; font-weight: 300; letter-spacing: .04em; color: #e8fffb; min-width: 52px; }
+.hud .hp .bar { width: 120px; height: 5px; background: rgba(127,245,230,.18); align-self: center; } .hud .hp .bar i { display: block; height: 100%; background: var(--teal2); transition: width .2s; }
+.hud .hp .max { font-size: 10px; opacity: .6; }
+.hud .hp.low b { color: #ff8a70; } .hud .hp.low .bar i { background: var(--red); }
+.hud .obj { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); text-shadow: 0 1px 3px #000; }
+.hud .obj.pulse { animation: pulse 2.2s ease-out; } @keyframes pulse { 0% { color: #fff; letter-spacing: .3em; } 100% { color: var(--dim); letter-spacing: .16em; } }
+.hud .flash { position: absolute; top: 27%; left: 0; right: 0; text-align: center; font-size: 24px; font-weight: 300; letter-spacing: .5em; padding-left: .5em; color: #fff; opacity: 0; text-shadow: 0 0 18px rgba(255,80,50,.9); }
+.hud .flash.on { animation: flash 1.6s ease-out; } @keyframes flash { 0% { opacity: 0; letter-spacing: .9em; } 15% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; letter-spacing: .5em; } }
+.hud .title { position: absolute; top: 34%; left: 0; right: 0; text-align: center; opacity: 0; transition: opacity 1.2s; text-shadow: 0 2px 10px #000; }
+.hud .title.on { opacity: 1; } .hud .title h2 { margin: 0; font-size: 34px; font-weight: 200; letter-spacing: .5em; padding-left: .5em; color: #f0fffc; } .hud .title p { margin: 10px 0 0; font-size: 11px; letter-spacing: .4em; color: var(--dim); }
+.hud .toast { position: absolute; left: 50%; bottom: 24%; transform: translateX(-50%); padding: 5px 14px; font-size: 12px; color: #eafffb; background: rgba(8,40,38,.6); border: 1px solid rgba(127,245,230,.35); opacity: 0; transition: opacity .3s; white-space: nowrap; }
+.hud .toast.on { opacity: 1; }
+.hud .cap { position: absolute; left: 50%; bottom: calc(12% + var(--safe-b)); transform: translateX(-50%); max-width: min(680px, 62vw); text-align: center; text-transform: none; letter-spacing: .03em; font-size: 15px; line-height: 1.35; color: #f2f5f7; text-shadow: 0 1px 4px #000, 0 0 2px #000; opacity: 0; transition: opacity .35s; }
+.hud .cap.on { opacity: 1; } .hud .cap b { font-size: 10px; letter-spacing: .25em; color: #ff9a80; font-weight: 600; text-transform: uppercase; }
+.hud .prompt { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); padding: 6px 16px; font-size: 13px; color: #fff; border: 1px solid #5aa8ff; background: rgba(20,60,140,.45); opacity: 0; transition: opacity .15s; white-space: nowrap; }
+.hud .prompt.on { opacity: 1; animation: pr 1s infinite alternate; } @keyframes pr { to { box-shadow: 0 0 16px rgba(90,168,255,.8); } }
+.hud .fps { position: absolute; right: 8px; top: 6px; font-size: 10px; color: #fff; opacity: .7; }
+.hud .fade { position: absolute; inset: 0; background: #000; opacity: 0; }
+
+/* ---- touch controls ---- */
+.touch { position: absolute; inset: 0; pointer-events: auto; display: none; }
+.touch .stick { position: absolute; display: none; width: 112px; height: 112px; margin: -56px; border-radius: 50%; border: 1px solid rgba(127,245,230,.35); background: rgba(127,245,230,.06); pointer-events: none; }
+.touch .stick i { position: absolute; left: 34px; top: 34px; width: 44px; height: 44px; border-radius: 50%; background: rgba(127,245,230,.4); }
+.touch .tb { position: absolute; border-radius: 50%; border: 1.5px solid rgba(127,245,230,.5); background: rgba(10,50,48,.35); color: #dffff9; font: 600 10px var(--font); letter-spacing: .12em; padding: 0; touch-action: none; }
+.touch .tb:active { background: rgba(127,245,230,.35); }
+.touch .fire { right: calc(26px + var(--safe-r)); bottom: calc(58px + var(--safe-b)); width: 86px; height: 86px; background: radial-gradient(circle, rgba(127,245,230,.35) 0 28%, rgba(10,50,48,.35) 30%); }
+.touch .jump { right: calc(126px + var(--safe-r)); bottom: calc(22px + var(--safe-b)); width: 62px; height: 62px; }
+.touch .use { right: calc(34px + var(--safe-r)); bottom: calc(160px + var(--safe-b)); width: 68px; height: 68px; opacity: .35; }
+.touch .use.hot { opacity: 1; border-color: #5aa8ff; background: rgba(30,90,200,.55); box-shadow: 0 0 18px rgba(90,168,255,.9); }
+.touch .pause { right: calc(12px + var(--safe-r)); top: 10px; width: 38px; height: 38px; border-radius: 8px; opacity: .6; }
+
+/* ---- menus ---- */
+.menu { position: absolute; inset: 0; display: none; pointer-events: auto; align-items: center; justify-content: center; text-transform: uppercase; overflow-y: auto; touch-action: pan-y; }
+.menu.on { display: flex; }
+.menu.main { background: radial-gradient(ellipse at 50% 120%, #0d3a3a 0%, #04090f 55%, #02040a 100%); }
+.menu.pause, .menu.admin { background: rgba(2,6,10,.82); backdrop-filter: blur(3px); }
+.menu.death { background: radial-gradient(ellipse at center, rgba(60,0,0,.55), rgba(10,0,0,.92)); animation: fadein 1.2s; }
+.menu.done { background: radial-gradient(ellipse at center, rgba(0,40,40,.7), rgba(0,4,6,.96)); animation: fadein 1.5s; }
+@keyframes fadein { from { opacity: 0; } }
+.menu .panel { display: flex; flex-direction: column; align-items: center; gap: 9px; width: min(340px, 86vw); margin: auto; padding: 12px 0; }
+.menu .panel.wide { width: min(560px, 92vw); }
+.menu h1 { margin: 0 0 2px; font-size: clamp(26px, 6vh, 46px); font-weight: 200; letter-spacing: .45em; padding-left: .45em; color: #f0fffc; text-shadow: 0 0 30px rgba(31,216,194,.45); text-align: center; }
+.menu.death h1 { color: #ffd8d0; text-shadow: 0 0 30px rgba(255,60,30,.6); }
+.menu h3 { margin: 6px 0 0; font-size: 10px; letter-spacing: .3em; color: var(--dim); font-weight: 500; align-self: flex-start; }
+.menu .tag { margin: 0 0 8px; font-size: 10px; letter-spacing: .3em; color: var(--dim); text-align: center; line-height: 1.6; }
+.menu .stat { font-size: 12px; letter-spacing: .2em; line-height: 2; text-align: center; color: #dffff9; margin: 0; }
+.menu button { font: 500 12px var(--font); letter-spacing: .28em; color: #dffff9; background: rgba(20,90,84,.22); border: 1px solid rgba(127,245,230,.35); padding: 11px 14px; width: 100%; cursor: pointer; text-transform: uppercase; }
+.menu button:hover, .menu button:active { background: rgba(127,245,230,.25); }
+.menu button.big { background: rgba(31,216,194,.3); border-color: var(--teal); padding: 14px; }
+.menu button.dim { opacity: .55; padding: 8px; font-size: 10px; }
+.menu button.sel { background: rgba(127,245,230,.4); border-color: #fff; color: #fff; }
+.menu .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; font-size: 11px; letter-spacing: .2em; }
+.menu .row span { flex: 0 0 42%; } .menu .row em { font-style: normal; color: #fff; margin-left: 6px; }
+.menu .row input { flex: 1; accent-color: var(--teal2); height: 26px; }
+.menu .seg { display: flex; flex: 1; } .menu .seg button { padding: 9px 4px; font-size: 10px; letter-spacing: .12em; }
+.menu .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; width: 100%; } .menu .grid button { padding: 9px 4px; font-size: 10px; letter-spacing: .1em; }
+.menu .note { min-height: 14px; margin: 2px 0; font-size: 10px; letter-spacing: .1em; color: #ffd27a; text-transform: none; }
+.menu .code { font-size: 28px; letter-spacing: .6em; padding-left: .6em; color: #fff; } .menu .code.bad { color: var(--red); }
+.menu .keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 210px; } .menu .keys button { padding: 9px 0; font-size: 15px; letter-spacing: 0; }
+.menu .build { position: absolute; right: 12px; bottom: 8px; font-size: 9px; letter-spacing: .2em; color: rgba(127,245,230,.5); }
+@media (max-height: 420px) { .menu .panel { gap: 6px; } .menu button { padding: 8px 12px; } .menu button.big { padding: 10px; } .menu .tag { margin-bottom: 3px; } }
