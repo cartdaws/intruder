@@ -30,6 +30,8 @@ export class UI {
   showHud(v) { this.hud.classList.toggle('hidden', !v); }
   showSkip(v) { this.skipEl.classList.toggle('hidden', !v); }
   fade(a) { this.fadeEl.style.opacity = a; }
+  // the colour the screen fades to: black normally, a world's sky colour when diving into or rising out of its air
+  fadeColor(c) { this.fadeEl.style.background = c; }
 
   setHealth(h, max) {
     const v = Math.max(0, Math.ceil(h));

@@ -243,10 +243,38 @@ class Place {
       const cc = document.createElement('canvas'); cc.width = cc.height = 256; const x = cc.getContext('2d'); x.fillStyle = '#e8a8a8'; x.fillRect(0, 0, 256, 256);
       for (let i = 0; i < 90; i++) { const px = Math.random() * 256, py = Math.random() * 256, rr = 10 + Math.random() * 50, gg = x.createRadialGradient(px, py, 0, px, py, rr); gg.addColorStop(0, `rgba(255,232,214,${0.28 + Math.random() * 0.3})`); gg.addColorStop(1, 'rgba(255,220,200,0)'); x.fillStyle = gg; x.fillRect(px - rr, py - rr, rr * 2, rr * 2); }
       const ct = new THREE.CanvasTexture(cc); ct.wrapS = ct.wrapT = THREE.RepeatWrapping; ct.repeat.set(16, 16); ct.colorSpace = THREE.SRGBColorSpace;
-      this.clouds = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: ct, fog: true })); this.clouds.position.y = -70; G.add(this.clouds);
+      this.clouds = new THREE.Mesh(new THREE.PlaneGeometry(12000, 12000).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: ct, fog: true })); this.clouds.position.y = -70; ct.repeat.set(80, 80); G.add(this.clouds);
       const rg = new THREE.IcosahedronGeometry(1, 1), rp = rg.attributes.position; for (let i = 0; i < rp.count; i++) { const y = rp.getY(i); rp.setXYZ(i, rp.getX(i) * (0.8 + Math.random() * 0.4), y > 0 ? y * 0.28 : y * (1 + Math.random() * 0.6), rp.getZ(i) * (0.8 + Math.random() * 0.4)); } rg.computeVertexNormals();
       const isl = new THREE.InstancedMesh(rg, new THREE.MeshStandardMaterial({ color: W.rockTint, roughness: 0.95, flatShading: true }), 18), m4 = new THREE.Matrix4(), v = new THREE.Vector3(), q = new THREE.Quaternion();
       for (let i = 0; i < 18; i++) { const a = R(0, 6.283), d = R(170, 460), s = R(8, 34); m4.compose(v.set(Math.cos(a) * d, R(-30, 42), Math.sin(a) * d), q.setFromEuler(new THREE.Euler(0, R(0, 6), 0)), new THREE.Vector3(s, s, s)); isl.setMatrixAt(i, m4); } isl.frustumCulled = false; G.add(isl);
+    }
+
+    // ---- the world beyond the walk: land rolling out to the horizon, so the descent from high up looks down on a planet, not a tile
+    if (!W.islands) {
+      const RS = small ? 56 : 80, RR = small ? 30 : 44, R0 = 262, R1 = 9000, pos = [], uv = [], idx = [];
+      for (let j = 0; j <= RR; j++) {
+        const rad = R0 * Math.pow(R1 / R0, j / RR);
+        for (let i = 0; i <= RS; i++) {
+          const an = (i / RS) * Math.PI * 2, x = Math.cos(an) * rad, z = Math.sin(an) * rad;
+          const n = fbm(x * 0.0016 + seed, z * 0.0016 - seed), ridge = fbm(x * 0.0006 - seed, z * 0.0006 + seed, 3);
+          const y = W.rim * 1.55 + (n - 0.45) * (W.amp * 5 + rad * 0.018) + Math.max(0, ridge - 0.5) * rad * 0.07 * Math.min(1, rad / 1500);
+          pos.push(x, y, z); uv.push((x + SIZE / 2) / SIZE, (z + SIZE / 2) / SIZE);
+        }
+      }
+      for (let j = 0; j < RR; j++) for (let i = 0; i < RS; i++) { const a = j * (RS + 1) + i, b = a + RS + 1; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+      const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); fg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); fg.setIndex(idx); fg.computeVertexNormals();
+      const fm = new THREE.MeshStandardMaterial({ map: tex(W.tex, false, W.repeat), color: W.tint, roughness: 0.97, metalness: 0 });
+      if (W.tintK) fm.color.multiplyScalar(W.tintK);
+      this.farLand = new THREE.Mesh(fg, fm); this.farLand.frustumCulled = false; G.add(this.farLand);
+    }
+    // a deck of cloud the ship comes down through (not on airless Vael, and the reef already floats above its own cloud sea)
+    if (!W.islands && !W.sky.stars) {
+      const cc = document.createElement('canvas'); cc.width = cc.height = 256; const x = cc.getContext('2d');
+      for (let i = 0; i < 70; i++) { const px = Math.random() * 256, py = Math.random() * 256, rr = 16 + Math.random() * 60, gg = x.createRadialGradient(px, py, 0, px, py, rr); gg.addColorStop(0, `rgba(255,255,255,${0.3 + Math.random() * 0.35})`); gg.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gg; x.fillRect(px - rr, py - rr, rr * 2, rr * 2); }
+      const ct = new THREE.CanvasTexture(cc); ct.wrapS = ct.wrapT = THREE.RepeatWrapping; ct.repeat.set(10, 10); ct.colorSpace = THREE.SRGBColorSpace;
+      const cm = new THREE.MeshBasicMaterial({ map: ct, color: new THREE.Color(W.sky.hor).lerp(new THREE.Color(0xffffff), 0.6), transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide, fog: true });
+      cm.userData.noSnap = true;
+      this.deck = new THREE.Mesh(new THREE.PlaneGeometry(7000, 7000).rotateX(-Math.PI / 2), cm); this.deck.position.y = 330; this.deck.renderOrder = 2; G.add(this.deck);
     }
 
     // ---- weather: drifting specks that wrap around you
@@ -378,7 +406,7 @@ export class Surface {
     const W = P.w;
     g.viewmodel.setEnv(W.env); this.early = !g.flight.free && !g.campaign.s.chart;
     this.saved = { bg: s.background, fog: s.fog, far: c.far, enemies: g.enemies, nav: g.nav, arena: g.arena, barrels: g.barrels, obj: document.getElementById('objective')?.textContent };
-    s.background = P.bg; s.fog = P.fog; c.far = 1600; c.updateProjectionMatrix(); g.post.applyFog(s);
+    s.background = P.bg; s.fog = P.fog; c.far = 9500; c.updateProjectionMatrix(); g.post.applyFog(s);
     P.show(true); P.measureLander();
     g.world.terrain = (x, z) => P.h(x - ORIGIN.x, z - ORIGIN.z);
     g.enemies = []; g.barrels = [];
@@ -392,7 +420,7 @@ export class Surface {
     if (!this.done[id] && P.spawns) for (const [type, variant, x, z] of P.spawns) { const e = g.makeEnemy({ type, variant: variant === 'std' ? undefined : variant, x: ORIGIN.x + x, z: ORIGIN.z + z }); g.enemies.push(e); }
     const L = P.lander; L.visible = true; L.userData.engines.forEach((e) => { e.visible = true; }); for (const m of L.userData.screens || []) m.material.opacity = 0.9;
     if (L.userData.canopyPivot) L.userData.canopyPivot.rotation.x = 0;
-    this.fromX = R(-1, 1) * 80; this.fromZ = 240;
+    this.fromX = R(-1, 1) * 300; this.fromZ = 900;
     g.ui.fade(1);
     return true;
   }
@@ -452,9 +480,14 @@ export class Surface {
   }
 
   landing(dt, T, P, L, W) {
-    const g = this.g, ui = g.ui, vm = g.viewmodel, fx = g.effects, DUR = 7.6;
-    ui.fade(1 - ease(T, 0, 1.1));
-    const k = Math.min(1, T / DUR), e = 1 - Math.pow(1 - k, 2.6), y = lerp(170, 1.25, e), xz = 1 - e;
+    const g = this.g, ui = g.ui, vm = g.viewmodel, fx = g.effects, DUR = 13;
+    // still inside the world's sky when the surface begins: the haze thins and the land comes up out of it
+    ui.fade(1 - ease(T, 0.3, 2.8));
+    if (T > 2.8 && !this.f.clear) { this.f.clear = 1; ui.fadeColor('#000'); }
+    const thick = W.sky.stars ? W.sky.fog : W.sky.fog * 5 + 0.004;
+    P.fog.density = lerp(thick, W.sky.fog, ease(T, 0.5, 6.5));
+    if (P.deck) P.deck.material.opacity = lerp(0.85, 0.35, ease(T, DUR - 3, DUR));
+    const k = Math.min(1, T / DUR), e = 1 - Math.pow(1 - k, 2.6), y = lerp(620, 1.25, e), xz = Math.pow(1 - e, 1.4);
     L.position.set(this.fromX * xz, y, this.fromZ * xz);
     L.rotation.set(lerp(-0.42, 0.04, ease(T, 0.5, DUR - 0.8)) * (k < 1 ? 1 : 0), Math.atan2(this.fromX, this.fromZ) * xz, Math.sin(T * 1.7) * 0.04 * (1 - k));
     L.userData.engines.forEach((sp) => sp.scale.setScalar(1 + 2 * (1 - k) + Math.sin(T * 40) * 0.1));
@@ -467,7 +500,7 @@ export class Surface {
     if (T >= DUR && !this.f.b) { this.f.b = 1; g.audio.play('land', { vol: 1 }); g.audio.play('door', { vol: 0.7 }); g.addShake(0.5); L.userData.engines.forEach((sp) => { sp.visible = false; }); }
     if (L.userData.canopyPivot) L.userData.canopyPivot.rotation.x = 1.15 * ease(T, DUR + 0.5, DUR + 1.6);
     if (T > DUR + 0.7 && !this.f.c) { this.f.c = 1; g.audio.play('hiss', { vol: 0.5 }); if (!this.early) ui.subtitle(W.intro, '', 3.6, true); }
-    if (T > DUR + 1.4) { this.step = 'hop'; this.T = 0; vm.limp = 0; g.shakeAmp = 0; vm.reachW = 0; L.updateMatrixWorld(true); const pose = this.pose; this.hopA = new THREE.Vector3(pose.x, pose.y, pose.z); this.hopQ = pose.q.clone(); }
+    if (T > DUR + 1.4) { g.camera.far = 3000; g.camera.updateProjectionMatrix(); P.fog.density = W.sky.fog; this.step = 'hop'; this.T = 0; vm.limp = 0; g.shakeAmp = 0; vm.reachW = 0; L.updateMatrixWorld(true); const pose = this.pose; this.hopA = new THREE.Vector3(pose.x, pose.y, pose.z); this.hopQ = pose.q.clone(); }
   }
 
   hop(dt, T, P, L, W) {
@@ -587,13 +620,16 @@ export class Surface {
     if (T > DUR + 0.5) { this.step = 'seated'; this.T = 0; g.audio.play('surge', { vol: 0.7 }); L.userData.engines.forEach((sp) => { sp.visible = true; }); }
   }
   liftoff(dt, T, P, L, W) {
-    const g = this.g, DUR = 5.2, k = Math.pow(Math.min(1, T / DUR), 2.2);
-    L.position.y = 1.25 + 230 * k; L.rotation.x = 0.3 * ease(T, 0.4, 2.2);
+    const g = this.g, DUR = 7, k = Math.pow(Math.min(1, T / DUR), 2.2);
+    if (!this.f.up) { this.f.up = 1; g.camera.far = 9500; g.camera.updateProjectionMatrix(); g.ui.fadeColor('#' + new THREE.Color(W.sky.hor).getHexString()); }
+    P.fog.density = lerp(W.sky.fog, W.sky.stars ? W.sky.fog : W.sky.fog * 5 + 0.004, ease(T, DUR - 3, DUR));
+    L.position.y = 1.25 + 640 * k;
+    if (P.deck) P.deck.material.opacity = lerp(0.35, 0.85, ease(T, 1, 3.5)); L.rotation.x = 0.3 * ease(T, 0.4, 2.2);
     L.userData.engines.forEach((sp) => sp.scale.setScalar(1.5 + 2.5 * ease(T, 0, 2) + Math.sin(T * 40) * 0.1));
     this.seat(L, -0.14); g.viewmodel.limp = 0.22; g.opening.reachAt(_v.copy(YOKE_GRIP).applyMatrix4(L.matrixWorld), 0.45);
     g.trauma = Math.max(g.trauma, 0.32); g.shakeAmp = 1.5;
     if (T < 1.8) { const c = g.effects.smokeP; if (c) for (let i = 0; i < 3; i++) { const an = R(0, 6.283), sp = R(4, 11); c.emit(ORIGIN.x + Math.cos(an) * R(1, 4), 0.4 + P.h(0, 0), ORIGIN.z + Math.sin(an) * R(1, 4), Math.cos(an) * sp, 0.6, Math.sin(an) * sp, 1.6, R(1, 2), 0.28, 0.25, 0.24, 0, 0.5, 2); } }
-    g.ui.fade(ease(T, DUR - 1.3, DUR - 0.1));
+    g.ui.fade(ease(T, DUR - 2.2, DUR - 0.1));
     if (T >= DUR) this.leave(true);
   }
 
